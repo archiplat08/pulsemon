@@ -92,3 +92,13 @@ def test_handle_export_invalid_format_returns_error(tmp_db_path, capsys):
     assert rc == 1
     captured = capsys.readouterr()
     assert "error" in captured.err
+
+
+def test_handle_export_no_results_returns_empty(tmp_db_path, capsys):
+    """Exporting for a monitor_id with no records should return an empty list."""
+    args = _make_args(monitor_id=999, fmt="json", db=str(tmp_db_path))
+    rc = handle_export(args)
+    assert rc == 0
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert data == []
