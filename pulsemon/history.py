@@ -1,77 +1,82 @@
-"""Check history queries and retention management."""
+"""History retrieval and maintenance helpers."""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import sqlite3
+from datetime import datetime, timezone
 from typing import List, Optional
 
-from pulsemon.db import db_conn
 from pulsemon.checks import _row_to_check_result
+from pulsemon.db import get_connection
 from pulsemon.models import CheckResult
 
 
 def get_check_history(
-    monitor_id: str,
+    db_path: str,
+    monitor_id: int,
     limit: int = 100,
-    since: Optional[datetime] = None,
 ) -> List[CheckResult]:
-    """Return check results for a monitor, newest first."""
-    with db_conn() as conn:
-        if since is not None:
-            rows = conn.execute(
-                """
-                SELECT id, monitor_id, checked_at, status_code, response_time_ms,
-                       is_up, error
-                FROM check_results
-                WHERE monitor_id = ? AND checked_at >= ?
-                ORDER BY checked_at DESC
-                LIMIT ?
-                """,
-                (monitor_id, since.isoformat(), limit),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT id, monitor_id, checked_at, status_code, response_time_ms,
-                       is_up, error
-                FROM check_results
-                WHERE monitor_id = ?
-                ORDER BY checked_at DESC
-                LIMIT ?
-                """,
-                (monitor_id, limit),
-            ).fetchall()
+    """Return the most recent *limit* check results for a monitor."""
+    conn = get_connection(db_path)
+    rows = conn.execute(
+        """
+        SELECT id, monitor_id, status, status_code, response_time_ms, error, checked_at
+        FROM check_results
+        WHERE monitor_id = ?
+        ORDER BY checked_at DESC
+        LIMIT ?
+        """,
+        (monitor_id, limit),
+    ).fetchall()
+    conn.close()
     return [_row_to_check_result(r) for r in rows]
 
 
 def get_uptime_percentage(
-    monitor_id: str,
-    window_hours: int = 24,
+    db_path: str,
+    monitor_id: int,
+    limit: int = 100,
 ) -> Optional[float]:
-    """Return uptime % over the last *window_hours* hours, or None if no data."""
-    since = datetime.utcnow() - timedelta(hours=window_hours)
-    with db_conn() as conn:
-        row = conn.execute(
-            """
-            SELECT
-                COUNT(*) AS total,
-                SUM(CASE WHEN is_up = 1 THEN 1 ELSE 0 END) AS up_count
+    """Return the uptime percentage (0-100) over the last *limit* checks."""
+    conn = get_connection(db_path)
+    row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN status = 'up' THEN 1 ELSE 0 END) AS up_count
+        FROM (
+            SELECT status
             FROM check_results
-            WHERE monitor_id = ? AND checked_at >= ?
-            """,
-            (monitor_id, since.isoformat()),
-        ).fetchone()
-    if row is None or row["total"] == 0:
-        return None
-    return round(row["up_count"] / row["total"] * 100, 2)
-
-
-def purge_old_results(retention_days: int = 30) -> int:
-    """Delete check results older than *retention_days*. Returns deleted row count."""
-    cutoff = datetime.utcnow() - timedelta(days=retention_days)
-    with db_conn() as conn:
-        cursor = conn.execute(
-            "DELETE FROM check_results WHERE checked_at < ?",
-            (cutoff.isoformat(),),
+            WHERE monitor_id = ?
+            ORDER BY checked_at DESC
+            LIMIT ?
         )
-    return cursor.rowcount
+        """,
+        (monitor_id, limit),
+    ).fetchone()
+    conn.close()
+    if row is None or row[0] == 0:
+        return None
+    total, up_count = row
+    return round((up_count / total) * 100, 2)
+
+
+def purge_old_results(
+    db_path: str,
+    before: datetime,
+) -> int:
+    """Delete check results with *checked_at* older than *before*.
+
+    Returns the number of rows deleted.
+    """
+    if before.tzinfo is None:
+        before = before.replace(tzinfo=timezone.utc)
+    conn = get_connection(db_path)
+    cursor: sqlite3.Cursor = conn.execute(
+        "DELETE FROM check_results WHERE checked_at < ?",
+        (before.isoformat(),),
+    )
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
