@@ -51,6 +51,21 @@ class Config:
     alerts: AlertConfig = field(default_factory=AlertConfig)
 
 
+def _parse_smtp(smtp_raw: dict) -> SmtpConfig:
+    """Parse a raw SMTP dict into a SmtpConfig, raising KeyError if 'host' is missing."""
+    if "host" not in smtp_raw:
+        raise KeyError("smtp config is missing required field 'host'")
+    return SmtpConfig(
+        host=smtp_raw["host"],
+        port=int(smtp_raw.get("port", 587)),
+        username=smtp_raw.get("username", ""),
+        password=smtp_raw.get("password", ""),
+        from_addr=smtp_raw.get("from_addr", ""),
+        to_addrs=smtp_raw.get("to_addrs", []),
+        use_tls=bool(smtp_raw.get("use_tls", True)),
+    )
+
+
 def load_config(path: str | Path | None = None) -> Config:
     """Load configuration from a TOML file.
 
@@ -75,15 +90,7 @@ def load_config(path: str | Path | None = None) -> Config:
 
     smtp_cfg: SmtpConfig | None = None
     if smtp_raw := alert_section.get("smtp"):
-        smtp_cfg = SmtpConfig(
-            host=smtp_raw["host"],
-            port=int(smtp_raw.get("port", 587)),
-            username=smtp_raw.get("username", ""),
-            password=smtp_raw.get("password", ""),
-            from_addr=smtp_raw.get("from_addr", ""),
-            to_addrs=smtp_raw.get("to_addrs", []),
-            use_tls=bool(smtp_raw.get("use_tls", True)),
-        )
+        smtp_cfg = _parse_smtp(smtp_raw)
 
     return Config(
         db_path=db_path,
