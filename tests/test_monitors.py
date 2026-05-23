@@ -63,6 +63,12 @@ def test_list_monitors_active_only(tmp_db):
     assert len(results) == 1
 
 
+def test_list_monitors_empty(tmp_db):
+    """list_monitors should return an empty list when no monitors exist."""
+    results = mon_crud.list_monitors()
+    assert results == []
+
+
 def test_delete_monitor_removes_row(tmp_db):
     m = mon_crud.create_monitor(_make_monitor())
     deleted = mon_crud.delete_monitor(m.id)
