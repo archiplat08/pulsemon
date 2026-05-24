@@ -22,13 +22,16 @@ def add_alerts_parser(subparsers: argparse._SubParsersAction) -> None:  # noqa: 
 
 
 def handle_alerts(args: argparse.Namespace) -> None:
+    """Dispatch the alerts subcommand to the appropriate handler."""
     cmd = getattr(args, "alerts_cmd", None) or "list"
     conn = get_connection(args.db)
-    if cmd == "list":
-        _handle_list(conn, args)
-    elif cmd == "clear":
-        _handle_clear(conn, args)
-    conn.close()
+    try:
+        if cmd == "list":
+            _handle_list(conn, args)
+        elif cmd == "clear":
+            _handle_clear(conn, args)
+    finally:
+        conn.close()
 
 
 def _handle_list(conn: Any, args: argparse.Namespace) -> None:
