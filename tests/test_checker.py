@@ -106,3 +106,11 @@ def test_list_check_results_respects_limit(tmp_db):
         save_check_result(_make_result(), tmp_db)
     results = list_check_results(1, tmp_db, limit=3)
     assert len(results) == 3
+
+
+def test_list_check_results_returns_empty_for_unknown_monitor(tmp_db):
+    """list_check_results should return an empty list when no results exist for a monitor."""
+    for _ in range(3):
+        save_check_result(_make_result(monitor_id=1), tmp_db)
+    results = list_check_results(999, tmp_db)
+    assert results == []
